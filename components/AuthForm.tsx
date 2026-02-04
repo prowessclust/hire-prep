@@ -11,6 +11,16 @@ import Link from "next/link"
 import { toast } from "sonner"
 import FormField from "./FormField"
 import { useRouter } from "next/navigation"
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth"
+import { auth } from "@/firebase/client"
+import { signIn, signUp } from "@/lib/actions/auth.action"
+
+//we are doing registration on client side then we are storing the user in server side
+//then sign in again on client side then we are setting the token over on the server side
+//next js server component like API routes won't work properly
+//so we are using actions
+//actions are server side functions that can be called from the client side
+//server side authentication -> much secure, better nextjs performance, user roles and permissions can be fetched
 
 const authFormSchema = (type: FormType) => {
   return z.object({
@@ -32,12 +42,47 @@ const AuthForm = ({ type }: { type: FormType }) => {
     },
   })
 //how it is making sure sign in is right
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       if(type === 'sign-up') {
+        const { name, email, password } = values;
+        // it creates a new user in firebase auth not in firestore db
+        const userCredentials = await createUserWithEmailAndPassword(auth, email, password);
+        
+        const result = await signUp({
+          uid: userCredentials.user.uid,
+          name: name!,
+          email,
+          password,
+        });
+
+        if(!result.success) {
+          toast.error(result.message);
+          return;
+        }
         toast.success('Account created successfully. Please sign in.');
         router.push('/sign-in');
       } else {
+        const { email, password } = values;
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+        //to generate a short-lived authentication token
+        const idToken = await userCredential.user.getIdToken();
+        
+        if(!idToken){
+          toast.error('Sign in failed');
+          return;
+        }
+
+        const result = await signIn({
+          email,
+          idToken
+        });
+
+        if(!result.success) {
+          toast.error(result.message);
+          return;
+        }
         toast.success('Sign in successfully');
         router.push('/');
       }
